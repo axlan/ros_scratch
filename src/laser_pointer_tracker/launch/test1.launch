@@ -1,0 +1,20 @@
+<launch>                                                                        
+  <node pkg="image_publisher" type="image_publisher" name="image_publisher1"
+        args="$(find laser_pointer_tracker)/test/color_balls.png" >
+    <param name="flip_horizontal" value="false" />
+    <param name="flip_vertical" value="false" />
+    <param name="frame_id" value="link1" />
+    <param name="publish_rate" value="1" />
+  </node>
+
+
+  <node name="laser_pointer_tracker1" pkg="laser_pointer_tracker" type="calibration_helper.py" respawn="false" output="screen">
+    <param name="input_image" value="image_publisher1/image_raw" />
+    <param name="hue_min" value="20" />
+    <param name="hue_max" value="160" />
+    <param name="sat_min" value="100" />
+    <param name="sat_max" value="255" />
+    <param name="val_min" value="200" />
+    <param name="val_max" value="256" />
+  </node>"
+</launch>
