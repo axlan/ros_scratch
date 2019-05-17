@@ -1,15 +1,13 @@
 <launch>                                                                        
-  <node pkg="image_publisher" type="image_publisher" name="image_publisher1"
-        args="$(find laser_pointer_tracker)/test/color_balls.png" >
-    <param name="flip_horizontal" value="false" />
-    <param name="flip_vertical" value="false" />
-    <param name="frame_id" value="link1" />
-    <param name="publish_rate" value="1" />
+  <node pkg="cv_camera" type="cv_camera_node" name="cv_camera_node1" >
+    <param name="device_id" value="0" />
+    <param name="image_height" value="600" />
+    <param name="image_width" value="800" />
   </node>
 
 
   <node name="laser_pointer_tracker1" pkg="laser_pointer_tracker" type="laser_tracker.py" respawn="false" output="screen">
-    <param name="input_image" value="image_publisher1/image_raw" />
+    <param name="input_image" value="cv_camera_node1/image_raw" />
     <param name="hue_min" value="20" />
     <param name="hue_max" value="160" />
     <param name="sat_min" value="100" />

@@ -10,65 +10,71 @@ from laser_pointer_tracker.cfg import ThresholdsConfig # pylint: disable=import-
 import sys
 import argparse
 import cv2
+import numpy as np
 
 class LaserTracker(object):
+
+    _COMPONENT_NAMES = ['hue', 'sat', 'val']
 
     def __init__(self):
 
         self.bridge = CvBridge()
         topic_base = '{}/'.format(rospy.get_name())
-        self.hue_pub = rospy.Publisher(topic_base + 'thresholded_hue', Image, queue_size=10)
-        self.hue_min = None
-        self.hue_max = None
-        self.sat_min = None
-        self.sat_max = None
-        self.val_min = None
-        self.val_max = None
-        dynamic_reconfigure.server.Server(ThresholdsConfig, self.threshold_conf_callback)
+        self.components = {}
+        for component_name in LaserTracker._COMPONENT_NAMES:
+            component = {}
+            component['pub'] = rospy.Publisher(topic_base + 'thresholded_' + component_name, Image, queue_size=10)
+            component['min'] = None
+            component['max'] = None
+            self.components[component_name] = component
+        self.hue_pub = rospy.Publisher(topic_base + 'thresholded_combined', Image, queue_size=10)
+        self.tracking_image_pub = rospy.Publisher(topic_base + 'tracking_image', Image, queue_size=10)
+        self.radius_min = None
+        self.radius_max = None
+        self.enable_cal_out = False
+        dynamic_reconfigure.server.Server(ThresholdsConfig, self._threshold_conf_callback)
+        self.previous_position = None
+        self.trail = None
 
-    def threshold_conf_callback(self, config, level):
-        rospy.loginfo('config: %s', str(config))
-        self.hue_min = config['hue_min']
-        self.hue_max = config['hue_max']
-        self.sat_min = config['sat_min']
-        self.sat_max = config['sat_max']
-        self.val_min = config['val_min']
-        self.val_max = config['val_max']
+    def _threshold_conf_callback(self, config, level):
+        for component_name in LaserTracker._COMPONENT_NAMES:
+            self.components[component_name]['min'] = config[component_name + '_min']
+            self.components[component_name]['max'] = config[component_name + '_max']
+        # Scale hue from 0-358 to 0-179
+        self.components['hue']['min'] /= 2
+        self.components['hue']['max'] /= 2
+        self.radius_min = config['radius_min']
+        self.radius_max = config['radius_max']
+        self.enable_cal_out = config.get('enable_cal_out', False)
         return config
 
-    def threshold_image(self, channel, channels):
-        rospy.loginfo('hue: %d %d', self.hue_min, self.hue_max)
-
-        if channel == "hue":
-            minimum = self.hue_min
-            maximum = self.hue_max
-        elif channel == "saturation":
-            minimum = self.sat_min
-            maximum = self.sat_max
-        elif channel == "value":
-            minimum = self.val_min
-            maximum = self.val_max
-
+    def _threshold_image(self, channel, channels):
+        minimum = self.components[channel]['min']
+        maximum = self.components[channel]['max']
+        wrapped = channel == "hue" and maximum < minimum
+        if wrapped:
+            minimum = self.components[channel]['max']
+            maximum = self.components[channel]['min']
+        if minimum == 0:
+            channels[channel][np.where(channels[channel] == 0)] = 1
         (_, tmp) = cv2.threshold(
             channels[channel],  # src
             maximum,  # threshold value
             0,  # we dont care because of the selected type
             cv2.THRESH_TOZERO_INV  # t type
         )
-
         (_, channels[channel]) = cv2.threshold(
             tmp,  # src
             minimum,  # threshold value
             255,  # maxvalue
             cv2.THRESH_BINARY  # type
         )
+        if wrapped:
+            # only works for filtering red color because the range for the hue
+            # is split
+            channels[channel] = cv2.bitwise_not(channels[channel])
 
-        # if channel == 'hue':
-        #     # only works for filtering red color because the range for the hue
-        #     # is split
-        #     self.channels['hue'] = cv2.bitwise_not(self.channels['hue'])
-
-    def track(self, frame, mask):
+    def _track(self, frame, mask):
         """
         Track the position of the laser pointer.
         Code taken from
@@ -92,9 +98,8 @@ class LaserTracker(object):
                             int(moments["m01"] / moments["m00"])
             else:
                 center = int(x), int(y)
-            print(radius)
             # only proceed if the radius meets a minimum size
-            if radius > 1.8:
+            if radius > self.radius_min and radius < self.radius_max:
                 # draw the circle and centroid on the frame,
                 cv2.circle(frame, (int(x), int(y)), int(radius),
                             (0, 255, 255), 2)
@@ -103,44 +108,51 @@ class LaserTracker(object):
                 if self.previous_position:
                     cv2.line(self.trail, self.previous_position, center,
                                 (255, 255, 255), 2)
-
         cv2.add(self.trail, frame, frame)
         self.previous_position = center
 
-    def detect(self, frame):
+    def _detect(self, frame):
         hsv_img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         channels = {}
 
         # split the video frame into color channels
         h, s, v = cv2.split(hsv_img)
-        channels['hue'] = h
-        channels['saturation'] = s
-        channels['value'] = v
+        values = [h, s, v]
 
-        # Threshold ranges of HSV components; storing the results in place
-        self.threshold_image("hue", channels)
-        self.threshold_image("saturation", channels)
-        self.threshold_image("value", channels)
+        for comp, component_name in zip(values, LaserTracker._COMPONENT_NAMES):
+            channels[component_name] = comp
+            # Threshold ranges of HSV components; storing the results in place
+            self._threshold_image(component_name, channels)
 
         # Perform an AND on HSV components to identify the laser!
         channels['laser'] = cv2.bitwise_and(
-            channels['hue'],
-            channels['value']
+            channels[LaserTracker._COMPONENT_NAMES[0]],
+            channels[LaserTracker._COMPONENT_NAMES[1]]
         )
         channels['laser'] = cv2.bitwise_and(
-            channels['saturation'],
+            channels[LaserTracker._COMPONENT_NAMES[2]],
             channels['laser']
         )
-
         return channels
 
 
     def callback(self, image_message):
+        if self.trail is None:
+            self.trail = np.zeros((image_message.height, image_message.width, 3),
+                                  np.uint8)
         cv_image = self.bridge.imgmsg_to_cv2(image_message, desired_encoding="passthrough")
-        channels = self.detect(cv_image)
-        #track(frame, channels['laser'])
-        hue_out = self.bridge.cv2_to_imgmsg(channels['hue'], encoding="passthrough")
-        self.hue_pub.publish(hue_out)
+        channels = self._detect(cv_image)
+        self._track(cv_image, channels['laser'])
+        tracking_image = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
+        self.tracking_image_pub.publish(tracking_image)
+        if self.enable_cal_out:
+            for component_name in LaserTracker._COMPONENT_NAMES:
+                out_img = self.bridge.cv2_to_imgmsg(channels[component_name], encoding="passthrough")
+                self.components[component_name]['pub'].publish(out_img)
+            # Merge the HSV components back together.
+            hsv_image = cv2.merge([ channels[i] for i in LaserTracker._COMPONENT_NAMES ])
+            out_img = self.bridge.cv2_to_imgmsg(hsv_image, encoding="bgr8")
+            self.hue_pub.publish(out_img)
 
 def listener():
 
