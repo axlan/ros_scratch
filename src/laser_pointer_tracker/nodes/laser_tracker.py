@@ -2,6 +2,7 @@
 
 import rospy
 from sensor_msgs.msg import Image
+from std_srvs.srv import Empty, EmptyResponse
 from cv_bridge import CvBridge, CvBridgeError
 import dynamic_reconfigure.server
 from laser_pointer_tracker.cfg import ThresholdsConfig # pylint: disable=import-error
@@ -35,6 +36,8 @@ class LaserTracker(object):
         dynamic_reconfigure.server.Server(ThresholdsConfig, self._threshold_conf_callback)
         self.previous_position = None
         self.trail = None
+        self.width = None
+        self.height = None
 
     def _threshold_conf_callback(self, config, level):
         for component_name in LaserTracker._COMPONENT_NAMES:
@@ -135,11 +138,16 @@ class LaserTracker(object):
         )
         return channels
 
+    def clear(self, req=None):
+        if self.height is not None and self.width is not None:
+            self.trail = np.zeros((self.height, self.width, 3), np.uint8)
+        return EmptyResponse()
 
     def callback(self, image_message):
-        if self.trail is None:
-            self.trail = np.zeros((image_message.height, image_message.width, 3),
-                                  np.uint8)
+        if self.trail is None or self.height != image_message.height or self.width != image_message.width:
+            self.height = image_message.height
+            self.width = image_message.width
+            self.clear()
         cv_image = self.bridge.imgmsg_to_cv2(image_message, desired_encoding="passthrough")
         channels = self._detect(cv_image)
         self._track(cv_image, channels['laser'])
@@ -167,6 +175,8 @@ def listener():
 
     input_image = rospy.get_param("~input_image")
     rospy.Subscriber(input_image, Image, laser_tracker.callback)
+
+    rospy.Service('clear', Empty, laser_tracker.clear)
 
     # spin() simply keeps python from exiting until this node is stopped
     rospy.spin()
