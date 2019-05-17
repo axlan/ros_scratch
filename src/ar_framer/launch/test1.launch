@@ -1,0 +1,30 @@
+<launch>                                                                        
+  <node pkg="image_publisher" type="image_publisher" name="image_publisher"
+        args="$(find ar_framer)/test/test1.png" >
+    <param name="flip_horizontal" value="false" />
+    <param name="flip_vertical" value="false" />
+    <param name="frame_id" value="link1" />
+    <param name="publish_rate" value="1" />
+  </node>
+
+  <node pkg="tf" type="static_transform_publisher" name="link1_broadcaster"
+        args="1 0 0 0 0 0 1 link1_parent link1 100" />
+
+  <arg name="marker_size" default="9" />
+  <arg name="max_new_marker_error" default="0.08" />
+  <arg name="max_track_error" default="0.2" />
+
+  <arg name="cam_image_topic" default="/image_publisher/image_raw" />
+  <arg name="cam_info_topic" default="/image_publisher/camera_info" />		
+  <arg name="output_frame" default="/link1" />
+
+  <node name="ar_track_alvar" pkg="ar_track_alvar" type="individualMarkersNoKinect" respawn="false" output="screen">
+		<param name="marker_size"           type="double" value="$(arg marker_size)" />
+		<param name="max_new_marker_error"  type="double" value="$(arg max_new_marker_error)" />
+		<param name="max_track_error"       type="double" value="$(arg max_track_error)" />
+		<param name="output_frame"          type="string" value="$(arg output_frame)" />
+
+		<remap from="camera_image"  to="$(arg cam_image_topic)" />
+		<remap from="camera_info"   to="$(arg cam_info_topic)" />
+	</node>"
+</launch>
