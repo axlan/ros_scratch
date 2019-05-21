@@ -2,35 +2,9 @@
 
 import rospy
 from turtlesim.msg import Pose
-from geometry_msgs.msg import Twist, Vector3
 
-from drawing_control.srv import DrawFile, DrawFileResponse
-from drawing_control.instructions import read_instr
-
-
-#! /usr/bin/env python
-import sys
-
-class LaserController1(object):
-    def __init__(self, base_vel, vel_out_topic):
-        self.heading = 0.0
-        self.scaling = Twist(linear=Vector3(1, 1, 1),
-                             angular=Vector3(1, 1, 1))
-        self.vel_out_topic = vel_out_topic
-        self.instrs = []
-
-    def pose_callback(self, pose_msg):
-        pass
-
-    def draw_file(self, req):
-        try:
-            with open(req.movement_file) as fd:
-                self.instrs = [ read_instr(line) for line in fd.readlines() ]
-        except Exception as e:
-            rospy.logwarn('draw_file failed: %s', e)
-            return DrawFileResponse(F alse)
-        return DrawFileResponse(True)
-
+from drawing_control.srv import DrawFile
+from drawing_control.laser_ctrl1 import LaserController1
 
 def listener():
 
@@ -43,11 +17,13 @@ def listener():
 
     topic_base = '{}/'.format(rospy.get_name())
 
-    pose_topic = rospy.get_param("~base_vel")
+    base_vel = rospy.get_param("~base_vel")
+    calibration_history_len = rospy.get_param("~calibration_history_len")
+    resolution = rospy.get_param("~resolution")
     pose_topic = rospy.get_param("~pose_in_topic")
     vel_topic = topic_base + "vel_out_topic"
 
-    ctrl = LaserController1(base_vel, vel_topic)
+    ctrl = LaserController1(base_vel, resolution, calibration_history_len, vel_topic)
 
     rospy.Service(topic_base + 'draw_file', DrawFile, ctrl.draw_file)
 
