@@ -1,0 +1,8 @@
+<launch>                                                                        
+  <node pkg="turtlesim" type="turtlesim_node" name="turlenode1">
+  </node>
+
+  <node name="ctrl1_node1" pkg="drawing_control" type="ctrl1" respawn="false" output="screen">
+    <param name="pose_in_topic" value="/turtle1/pose" />
+  </node>"
+</launch>

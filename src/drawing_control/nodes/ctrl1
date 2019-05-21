@@ -1,0 +1,60 @@
+#!/usr/bin/env python
+
+import rospy
+from turtlesim.msg import Pose
+from geometry_msgs.msg import Twist, Vector3
+
+from drawing_control.srv import DrawFile, DrawFileResponse
+from drawing_control.instructions import read_instr
+
+
+#! /usr/bin/env python
+import sys
+
+class LaserController1(object):
+    def __init__(self, vel_out_topic):
+        self.heading = 0.0
+        self.scaling = Twist(linear=Vector3(1, 1, 1),
+                             angular=Vector3(1, 1, 1))
+        self.vel_out_topic = vel_out_topic
+        self.instrs = []
+
+    def pose_callback(self, pose_msg):
+        pass
+
+    def draw_file(self, req):
+        try:
+            with open(req.movement_file) as fd:
+                self.instrs = [ read_instr(line) for line in fd.readlines() ]
+        except Exception as e:
+            rospy.loginfo(e)
+            return DrawFileResponse(False)
+        return DrawFileResponse(True)
+
+
+def listener():
+
+    # In ROS, nodes are uniquely named. If two nodes with the same
+    # name are launched, the previous one is kicked off. The
+    # anonymous=True flag means that rospy will choose a unique
+    # name for our 'listener' node so that multiple listeners can
+    # run simultaneously.
+    rospy.init_node('laser_controller1', anonymous=True)
+
+    topic_base = '{}/'.format(rospy.get_name())
+
+    pose_topic = rospy.get_param("~pose_in_topic")
+    vel_topic = topic_base + "vel_out_topic"
+
+    ctrl = LaserController1(vel_topic)
+
+    rospy.Service(topic_base + 'draw_file', DrawFile, ctrl.draw_file)
+
+    rospy.Subscriber(pose_topic, Pose, ctrl.pose_callback)
+    
+
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+if __name__ == '__main__':
+    listener()
