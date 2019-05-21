@@ -12,7 +12,7 @@ from drawing_control.instructions import read_instr
 import sys
 
 class LaserController1(object):
-    def __init__(self, vel_out_topic):
+    def __init__(self, base_vel, vel_out_topic):
         self.heading = 0.0
         self.scaling = Twist(linear=Vector3(1, 1, 1),
                              angular=Vector3(1, 1, 1))
@@ -27,8 +27,8 @@ class LaserController1(object):
             with open(req.movement_file) as fd:
                 self.instrs = [ read_instr(line) for line in fd.readlines() ]
         except Exception as e:
-            rospy.loginfo(e)
-            return DrawFileResponse(False)
+            rospy.logwarn('draw_file failed: %s', e)
+            return DrawFileResponse(F alse)
         return DrawFileResponse(True)
 
 
@@ -43,10 +43,11 @@ def listener():
 
     topic_base = '{}/'.format(rospy.get_name())
 
+    pose_topic = rospy.get_param("~base_vel")
     pose_topic = rospy.get_param("~pose_in_topic")
     vel_topic = topic_base + "vel_out_topic"
 
-    ctrl = LaserController1(vel_topic)
+    ctrl = LaserController1(base_vel, vel_topic)
 
     rospy.Service(topic_base + 'draw_file', DrawFile, ctrl.draw_file)
 
