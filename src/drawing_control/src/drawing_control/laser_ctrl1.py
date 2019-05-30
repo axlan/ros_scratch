@@ -1,47 +1,65 @@
 
+import numpy as np
+from numpy.linalg import norm
 
 import rospy
-from geometry_msgs.msg import Twist, Vector3
 
-from drawing_control.srv import DrawFileResponse
-from drawing_control.instructions import read_instr
+from drawing_control.srv import DrawFileResponse, MoveLaser
+from drawing_control.instructions import read_instr, MoveTo, SetPower, Wait
 
 class LaserController1(object):
-    def __init__(self, base_vel, resolution, calibration_history_len, vel_out_topic):
-        self.heading = 0.0
-        self.scaling = Twist(linear=Vector3(1, 1, 1),
-                             angular=Vector3(1, 1, 1))
-        self.vel_out_topic = vel_out_topic
-        self.resolution = resolution
+    def __init__(self, base_vel, cmd_spacing, resolution, calibration_history_len, position_service):
+        self.position_service = position_service
+        self.cmd_spacing = cmd_spacing
         self.base_vel = base_vel
+        self.resolution = resolution
         self.instrs = []
-        self.target_vel = 0
+        self.laser_on = False
         self.calibration_history = []
         self.calibration_history_len = calibration_history_len
-        self.last_pose = None
+        self.last_cmd_time = 0
 
-    @staticmethod
-    def _pose_delta(prev, new):
-        return Vector3(new.x - prev.x,
-                       new.y - prev.y,
-                       0)
+    def set_position_client(self, x, y):
+        rospy.wait_for_service(self.position_service)
+        try:
+            set_position = rospy.ServiceProxy(self.position_service, MoveLaser)
+            set_position(x, y, self.laser_on)
+        except rospy.ServiceException, e:
+            rospy.logwarn("Service call failed: %s", e)
 
     def pose_callback(self, pose_msg):
-        if self.last_pose is not None and self.target_vel != 0:
-            delta_pose = LaserController1._pose_delta(self.last_pose, pose_msg)
-            delta_t = pose_msg.stamp - self.last_pose.stamp
-            self.calibration_history.append({
-                'target_vel': self.target_vel,
-                'delta_pose': delta_pose,
-                'delta_t': delta_t
-            })
-            #TODO calculate rotation and scaling based on history
-            if len(self.calibration_history) > self.calibration_history_len:
-                self.calibration_history.pop(0)
+        now = rospy.get_time()
+        if now < self.last_cmd_time + self.cmd_spacing:
+            return
+        # if self.last_pose is not None and self.target_vel != 0:
+        #     delta_pose = LaserController1._pose_delta(self.last_pose, pose_msg)
+        #     delta_t = pose_msg.stamp - self.last_pose.stamp
+        #     self.calibration_history.append({
+        #         'target_vel': self.target_vel,
+        #         'delta_pose': delta_pose,
+        #         'delta_t': delta_t
+        #     })
+        #     #TODO calculate rotation and scaling based on history
+        #     if len(self.calibration_history) > self.calibration_history_len:
+        #         self.calibration_history.pop(0)
         if len(self.instrs) > 0:
-            #TODO decide on target volicity, and apply calibration
-            pass
-        self.last_pose = pose_msg
+            instr = self.instrs[0]
+            if type(instr) == MoveTo:
+                delta_pose = np.array([pose_msg.x - instr.x, pose_msg.y - instr.y])
+                dist = norm(delta_pose)
+                rospy.loginfo('dist: %f', dist)
+                if norm(delta_pose) < self.resolution:
+                    self.instrs.pop(0)
+                    return
+                rospy.loginfo('move x: %f y:%f', instr.x, instr.y)
+                self.set_position_client(instr.x, instr.y)
+                self.last_cmd_time = now
+            elif type(instr) == SetPower:
+                self.laser_on = instr.is_on
+                self.instrs.pop(0)
+            elif type(instr) == Wait:
+                self.instrs.pop(0)
+            
 
     def draw_file(self, req):
         try:

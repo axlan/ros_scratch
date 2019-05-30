@@ -2,7 +2,13 @@
   <node pkg="turtlesim" type="turtlesim_node" name="turlenode1">
   </node>
 
+  <node name="turtlesim_wrapper_node1" pkg="drawing_control" type="turtlesim_wrapper" respawn="false" output="screen">
+    <param name="turtle_node_name" value="/turtle1" />
+  </node>
+
   <node name="ctrl1_node1" pkg="drawing_control" type="ctrl1" respawn="false" output="screen">
-    <param name="pose_in_topic" value="/turtle1/pose" />
-  </node>"
+    <param name="pose_in_topic" value="/turtlesim_wrapper_node1/pose" />
+    <param name="position_service" value="/turtlesim_wrapper_node1/move_laser" />
+    <param name="base_vel" value="1" />
+  </node>
 </launch>

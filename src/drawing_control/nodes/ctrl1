@@ -18,12 +18,13 @@ def listener():
     topic_base = '{}/'.format(rospy.get_name())
 
     base_vel = rospy.get_param("~base_vel")
-    calibration_history_len = rospy.get_param("~calibration_history_len")
-    resolution = rospy.get_param("~resolution")
+    calibration_history_len = rospy.get_param("~calibration_history_len", 100)
+    resolution = rospy.get_param("~resolution", 0.05)
+    cmd_spacing = rospy.get_param("~cmd_spacing", 0.5)
     pose_topic = rospy.get_param("~pose_in_topic")
-    vel_topic = topic_base + "vel_out_topic"
+    position_service = rospy.get_param("~position_service")
 
-    ctrl = LaserController1(base_vel, resolution, calibration_history_len, vel_topic)
+    ctrl = LaserController1(base_vel, cmd_spacing, resolution, calibration_history_len, position_service)
 
     rospy.Service(topic_base + 'draw_file', DrawFile, ctrl.draw_file)
 

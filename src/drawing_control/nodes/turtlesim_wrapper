@@ -1,0 +1,65 @@
+#!/usr/bin/env python
+
+import rospy
+from turtlesim.msg import Pose
+from turtlesim.srv import TeleportAbsolute, SetPen
+
+from drawing_control.srv import MoveLaser, MoveLaserResponse
+
+class TurtleWrapper(object):
+
+    def __init__(self, turtle_node_name):
+        topic_base = '{}/'.format(rospy.get_name())
+        self.pose_pub = rospy.Publisher(topic_base + 'pose', Pose, queue_size=10)
+        self.turtle_node_name = turtle_node_name
+
+    def move_turtle(self, req):
+        position_service = self.turtle_node_name + '/teleport_absolute'
+        pen_service = self.turtle_node_name + '/set_pen'
+        rospy.wait_for_service(position_service)
+        rospy.wait_for_service(pen_service)
+        try:
+            set_position = rospy.ServiceProxy(position_service, TeleportAbsolute)
+            set_on = rospy.ServiceProxy(pen_service, SetPen)
+            set_on(0, 0, 0, 5, not req.on)
+            rospy.loginfo('move x: %f y:%f', req.x * 10.0, req.y * 10.0)
+            set_position(req.x * 10.0, req.y * 10.0, 0)
+        except rospy.ServiceException, e:
+            rospy.logwarn("Service call failed: %s", e)
+        return MoveLaserResponse(True)
+
+    def pose_converter(self, pose_msg):
+        pose_msg.x /= 10.0
+        pose_msg.y /= 10.0
+        self.pose_pub.publish(pose_msg)
+
+
+
+def listener():
+
+    # In ROS, nodes are uniquely named. If two nodes with the same
+    # name are launched, the previous one is kicked off. The
+    # anonymous=True flag means that rospy will choose a unique
+    # name for our 'listener' node so that multiple listeners can
+    # run simultaneously.
+    rospy.init_node('laser_controller1', anonymous=True)
+
+    topic_base = '{}/'.format(rospy.get_name())
+
+    
+    turtle_node_name = rospy.get_param("~turtle_node_name")
+    pose_topic = turtle_node_name + '/pose'
+
+    wrapper = TurtleWrapper(turtle_node_name)
+
+    rospy.Service(topic_base + 'move_laser', MoveLaser, wrapper.move_turtle)
+
+    rospy.Subscriber(pose_topic, Pose, wrapper.pose_converter)
+    
+
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+
+if __name__ == "__main__":
+    listener()
