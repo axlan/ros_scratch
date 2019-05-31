@@ -1,0 +1,5 @@
+SetPower False
+MoveTo 0.0 0.0 0.3
+Wait 1.0
+SetPower True
+Wait 600.0

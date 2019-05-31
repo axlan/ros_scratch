@@ -4,6 +4,7 @@
 
   <node name="turtlesim_wrapper_node1" pkg="drawing_control" type="turtlesim_wrapper" respawn="false" output="screen">
     <param name="turtle_node_name" value="/turtle1" />
+    <param name="offset" type="yaml" value="[.1, .1]" />
   </node>
 
   <node name="ctrl1_node1" pkg="drawing_control" type="ctrl1" respawn="false" output="screen">

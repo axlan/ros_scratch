@@ -8,10 +8,11 @@ from drawing_control.srv import MoveLaser, MoveLaserResponse
 
 class TurtleWrapper(object):
 
-    def __init__(self, turtle_node_name):
+    def __init__(self, turtle_node_name, offset):
         topic_base = '{}/'.format(rospy.get_name())
         self.pose_pub = rospy.Publisher(topic_base + 'pose', Pose, queue_size=10)
         self.turtle_node_name = turtle_node_name
+        self.offset = offset
 
     def move_turtle(self, req):
         position_service = self.turtle_node_name + '/teleport_absolute'
@@ -22,15 +23,18 @@ class TurtleWrapper(object):
             set_position = rospy.ServiceProxy(position_service, TeleportAbsolute)
             set_on = rospy.ServiceProxy(pen_service, SetPen)
             set_on(0, 0, 0, 5, not req.on)
-            rospy.loginfo('move x: %f y:%f', req.x * 10.0, req.y * 10.0)
-            set_position(req.x * 10.0, req.y * 10.0, 0)
+            target_x = (req.x + self.offset[0] + 0.5) * 10.0
+            target_y = (req.y + self.offset[1] + 0.5) * 10.0
+            set_position(target_x, target_y, 0)
         except rospy.ServiceException, e:
             rospy.logwarn("Service call failed: %s", e)
         return MoveLaserResponse(True)
 
     def pose_converter(self, pose_msg):
         pose_msg.x /= 10.0
+        pose_msg.x -= 0.5
         pose_msg.y /= 10.0
+        pose_msg.y -= 0.5
         self.pose_pub.publish(pose_msg)
 
 
@@ -46,11 +50,12 @@ def listener():
 
     topic_base = '{}/'.format(rospy.get_name())
 
+    offset = rospy.get_param("~offset", [0, 0])
     
     turtle_node_name = rospy.get_param("~turtle_node_name")
     pose_topic = turtle_node_name + '/pose'
 
-    wrapper = TurtleWrapper(turtle_node_name)
+    wrapper = TurtleWrapper(turtle_node_name, offset)
 
     rospy.Service(topic_base + 'move_laser', MoveLaser, wrapper.move_turtle)
 
