@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+
+import serial
+import math
+import time
+
+import rospy
+from drawing_control.srv import MoveLaser, MoveLaserResponse
+
+
+
+class ArduinoRollPitchDriver():
+
+    _CMD_ROLL = 100
+    _CMD_PITCH = 101
+    _CMD_POWER = 102
+
+    def __init__(self, roll_offset, pitch_offset, roll_max, pitch_max, roll_scale, pitch_scale, com_port):
+        """ roll_offset (int) - servo angle (deg) to align laser straight up
+            pitch_offset (int) - servo angle (deg) to align laser straight up
+            roll_max (int) - max roll angle (deg). Sets scale of image
+            pitch_max (int) - max pitch angle (deg). Sets scale of image
+            com_port - com port for arduino serial
+        """
+        assert roll_max < roll_offset
+        assert pitch_max < pitch_offset
+        self.running = True
+        self.roll_offset = int(roll_offset)
+        self.pitch_offset = int(pitch_offset)
+        self.h_width = math.tan(math.radians(pitch_max))
+        self.h_height = math.tan(math.radians(roll_max))
+        self.verbose = verbose
+        self.roll_scale = float(roll_scale)
+        self.pitch_scale = float(pitch_scale)
+        self.power = None
+        self.ser = serial.Serial(com_port, baudrate=115200, timeout=3)
+        header = self.ser.read()
+        assert len(header) == 1
+        assert header[0] == 255
+
+    @staticmethod
+    def _calc_angle_offset(val, max_val):
+        distance = val * max_val / 2
+        angle = math.degrees(math.atan(distance))
+        return angle
+
+
+    def move_to(self, x, y):
+        pitch = self._calc_angle_offset(x, self.h_width) * self.roll_scale + self.pitch_offset
+        roll = self._calc_angle_offset(y, self.h_height) * self.pitch_scale + self.roll_offset
+        self._send_cmd(self._CMD_ROLL, round(roll))
+        self._send_cmd(self._CMD_PITCH, round(pitch))
+
+    def set_power(self, is_on):
+        if self.power is None or self.power != is_on:
+            self._send_cmd(self._CMD_POWER, int(is_on))
+            self.power = is_on
+
+    def handle_move_laser(self, req):
+        self.set_power(req.on)
+        self.move_to(req.x, req.y)
+        return MoveLaserResponse(True)
+
+    def _send_cmd(self, cmd, val):
+        data = bytearray([cmd, val & 255, (val >> 8) & 255])
+        if self.ser:
+            self.ser.write(data)
+        if self.verbose:
+            print(int(data[0]), val)
+
+    def __enter__(self):
+        return self    
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.ser:
+            self.ser.close()
+        self.running = False
+
+
+def listener():
+
+    # In ROS, nodes are uniquely named. If two nodes with the same
+    # name are launched, the previous one is kicked off. The
+    # anonymous=True flag means that rospy will choose a unique
+    # name for our 'listener' node so that multiple listeners can
+    # run simultaneously.
+    rospy.init_node('laserpointer_node', anonymous=True)
+    topic_base = '{}/'.format(rospy.get_name())
+
+    roll_offset = rospy.get_param("~roll_offset")
+    pitch_offset = rospy.get_param("~pitch_offset")
+    roll_max = rospy.get_param("~roll_max")
+    pitch_max = rospy.get_param("~pitch_max")
+    roll_scale = rospy.get_param("~roll_scale")
+    pitch_scale = rospy.get_param("~pitch_scale")
+    com_port = rospy.get_param("~com_port")
+
+
+    with ArduinoRollPitchDriver(roll_offset,
+                                pitch_offset,
+                                roll_max,
+                                pitch_max,
+                                roll_scale,
+                                pitch_scale,
+                                com_port) as driver:
+
+        rospy.Service(topic_base + 'move_laser', MoveLaser, drive.handle_move_laser)
+
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+if __name__ == '__main__':
+    listener()
