@@ -29,14 +29,15 @@ class ArduinoRollPitchDriver():
         self.pitch_offset = int(pitch_offset)
         self.h_width = math.tan(math.radians(pitch_max))
         self.h_height = math.tan(math.radians(roll_max))
-        self.verbose = verbose
         self.roll_scale = float(roll_scale)
         self.pitch_scale = float(pitch_scale)
         self.power = None
         self.ser = serial.Serial(com_port, baudrate=115200, timeout=3)
         header = self.ser.read()
-        assert len(header) == 1
-        assert header[0] == 255
+        if len(header) != 1 or ord(header[0]) != 255:
+            data = [ ord(c) for c in header ]
+            rospy.logerr("Bad serial data: %s", str(data))
+            exit(1) 
 
     @staticmethod
     def _calc_angle_offset(val, max_val):
@@ -61,12 +62,13 @@ class ArduinoRollPitchDriver():
         self.move_to(req.x, req.y)
         return MoveLaserResponse(True)
 
+
     def _send_cmd(self, cmd, val):
+        val = int(val)
         data = bytearray([cmd, val & 255, (val >> 8) & 255])
         if self.ser:
             self.ser.write(data)
-        if self.verbose:
-            print(int(data[0]), val)
+        rospy.logdebug( '%d - %d', int(data[0]), val)
 
     def __enter__(self):
         return self    
@@ -104,10 +106,10 @@ def listener():
                                 pitch_scale,
                                 com_port) as driver:
 
-        rospy.Service(topic_base + 'move_laser', MoveLaser, drive.handle_move_laser)
+        rospy.Service(topic_base + 'move_laser', MoveLaser, driver.handle_move_laser)
 
-    # spin() simply keeps python from exiting until this node is stopped
-    rospy.spin()
+        # spin() simply keeps python from exiting until this node is stopped
+        rospy.spin()
 
 if __name__ == '__main__':
     listener()

@@ -1,0 +1,57 @@
+#!/usr/bin/env python
+
+import serial
+import math
+import time
+
+import rospy
+from geometry_msgs.msg import Twist
+from drawing_control.srv import MoveLaser, MoveLaserResponse
+
+
+class ManualController(object):
+    def __init__(self, position_service):
+        self.cur_x = 0
+        self.cur_y = 0
+        self.laser_on = False
+        self.cur_theta = 0
+        self.position_service = position_service
+
+
+    def set_position_client(self):
+        rospy.wait_for_service(self.position_service)
+        try:
+            set_position = rospy.ServiceProxy(self.position_service, MoveLaser)
+            set_position(self.cur_x, self.cur_y, self.laser_on)
+        except rospy.ServiceException, e:
+            rospy.logwarn("Service call failed: %s", e)
+
+
+    def vel_callback(self, vel_cmd):
+        self.cur_x += vel_cmd.linear.x
+        self.cur_y += vel_cmd.linear.y
+        if vel_cmd.linear.z > 0:
+            self.laser_on = not self.laser_on
+        self.set_position_client()
+
+def listener():
+
+    # In ROS, nodes are uniquely named. If two nodes with the same
+    # name are launched, the previous one is kicked off. The
+    # anonymous=True flag means that rospy will choose a unique
+    # name for our 'listener' node so that multiple listeners can
+    # run simultaneously.
+    rospy.init_node('laser_manual_ctrl', anonymous=True)
+
+    twist_topic = rospy.get_param("~cmd_vel")
+    laser_service = rospy.get_param("~move_laser")
+
+    ctrl = ManualController(laser_service)
+
+    rospy.Subscriber(twist_topic, Twist, ctrl.vel_callback)
+
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+if __name__ == '__main__':
+    listener()

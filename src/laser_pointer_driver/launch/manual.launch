@@ -1,0 +1,20 @@
+<launch>                                                                        
+  <node pkg="laser_pointer_driver" type="laserpointer_node" name="lasernode1">
+    <param name="roll_offset" value="1024" />
+    <param name="pitch_offset" value="950" />
+    <param name="roll_max" value="10" />
+    <param name="pitch_max" value="10" />
+    <param name="roll_scale" value="50" />
+    <param name="pitch_scale" value="50" />
+    <param name="com_port" value="/dev/ttyACM0" />
+  </node>
+
+  <node name="manual_ctrl1" pkg="laser_pointer_driver" type="laser_manual_ctrl" respawn="false" output="screen">
+    <param name="cmd_vel" value="/cmd_vel" />
+    <param name="move_laser" value="/lasernode1/move_laser" />
+  </node>
+
+  <node name="teleop1" pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" respawn="false" output="screen">
+  </node>
+
+</launch>

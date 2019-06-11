@@ -160,6 +160,7 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 install(PROGRAMS
   nodes/ctrl1
+  nodes/turtlesim_wrapper
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
