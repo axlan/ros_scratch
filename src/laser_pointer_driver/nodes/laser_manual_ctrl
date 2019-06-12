@@ -19,6 +19,7 @@ class ManualController(object):
 
 
     def set_position_client(self):
+        rospy.loginfo('Moving to %f %f', self.cur_x, self.cur_y)
         rospy.wait_for_service(self.position_service)
         try:
             set_position = rospy.ServiceProxy(self.position_service, MoveLaser)

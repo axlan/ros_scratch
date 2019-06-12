@@ -59,6 +59,12 @@ class ArduinoRollPitchDriver():
 
     def handle_move_laser(self, req):
         self.set_power(req.on)
+
+        req.x = min(req.x, 0.5)
+        req.x = max(req.x, -0.5)
+        req.y = min(req.y, 0.5)
+        req.y = max(req.y, -0.5)
+
         self.move_to(req.x, req.y)
         return MoveLaserResponse(True)
 
@@ -68,7 +74,7 @@ class ArduinoRollPitchDriver():
         data = bytearray([cmd, val & 255, (val >> 8) & 255])
         if self.ser:
             self.ser.write(data)
-        rospy.logdebug( '%d - %d', int(data[0]), val)
+        rospy.loginfo( '%d - %d', int(data[0]), val)
 
     def __enter__(self):
         return self    
