@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+
+import rospy
+from sensor_msgs.msg import Image, CameraInfo
+from std_srvs.srv import Empty, EmptyResponse
+from cv_bridge import CvBridge, CvBridgeError
+from ar_track_alvar_msgs.msg import AlvarMarkers
+import dynamic_reconfigure.server
+from laser_pointer_tracker.cfg import ThresholdsConfig # pylint: disable=import-error
+from image_geometry import PinholeCameraModel
+
+#! /usr/bin/env python
+import sys
+import argparse
+import cv2
+import numpy as np
+
+class FrameAligner(object):
+
+    colors = [(255, 0, 0),
+              (0, 255, 0),
+              (0, 0, 255),
+              (255, 0, 255),]
+
+    def __init__(self):
+        self.bridge = CvBridge()
+        topic_base = '{}/'.format(rospy.get_name())
+        self.pub = rospy.Publisher(topic_base + 'aligned_image', Image, queue_size=10)
+        self.markers = [None] * 4
+        self.cam_model = None
+
+    def image_callback(self, image_message):
+        
+        if any([ m is None for m in self.markers]):
+            return
+
+        if self.cam_model is None:
+            return
+
+ 
+        
+        cv_image = self.bridge.imgmsg_to_cv2(image_message, desired_encoding="passthrough")
+        width, height = cv_image.shape[:2]
+
+        for marker in self.markers:
+            projected = self.cam_model.project3dToPixel((marker.pose.pose.position.x,marker.pose.pose.position.y,marker.pose.pose.position.z))
+            center = int(projected[0]), int(projected[1])
+            rospy.loginfo('id: %d x: %d y: %d', marker.id, projected[0], projected[1])
+            rospy.loginfo('id: %d x: %f y: %f', marker.id, marker.pose.pose.position.x, marker.pose.pose.position.y)
+            cv2.circle(cv_image, center, 50, self.colors[0], -1)
+            cv2.putText(cv_image, str(marker.id), center, 1, 18, self.colors[1],5)
+
+        out_img = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
+        self.pub.publish(out_img)
+
+
+    def marker_callback(self, markers_message):
+        for marker in markers_message.markers:
+            if marker.id < len(self.markers):
+                self.markers[marker.id] = marker
+
+    def camera_info_callback(self, info_message):
+        if self.cam_model is None:
+            self.cam_model = PinholeCameraModel()
+            self.cam_model.fromCameraInfo(info_message)
+        
+
+
+def listener():
+
+    # In ROS, nodes are uniquely named. If two nodes with the same
+    # name are launched, the previous one is kicked off. The
+    # anonymous=True flag means that rospy will choose a unique
+    # name for our 'listener' node so that multiple listeners can
+    # run simultaneously.
+    rospy.init_node('align_frame', anonymous=True)
+
+    framer = FrameAligner()
+
+    input_image = rospy.get_param("~input_image")
+    camera_info = rospy.get_param("~camera_info")
+    pose_markers = '/ar_pose_marker'
+    rospy.Subscriber(input_image, Image, framer.image_callback)
+    rospy.Subscriber(camera_info, CameraInfo, framer.camera_info_callback)
+    rospy.Subscriber(pose_markers, AlvarMarkers, framer.marker_callback)
+
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+if __name__ == '__main__':
+    listener()
