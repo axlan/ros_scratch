@@ -17,17 +17,50 @@ import numpy as np
 
 class FrameAligner(object):
 
-    colors = [(255, 0, 0),
-              (0, 255, 0),
-              (0, 0, 255),
-              (255, 0, 255),]
-
-    def __init__(self):
+    def __init__(self, output_width):
         self.bridge = CvBridge()
+        self.output_width = output_width
         topic_base = '{}/'.format(rospy.get_name())
         self.pub = rospy.Publisher(topic_base + 'aligned_image', Image, queue_size=10)
         self.markers = [None] * 4
         self.cam_model = None
+
+
+    @staticmethod
+    def order_points(pts):
+        # initialzie a list of coordinates that will be ordered
+        # such that the first entry in the list is the top-left,
+        # the second entry is the top-right, the third is the
+        # bottom-right, and the fourth is the bottom-left
+        rect = np.zeros((4, 2), dtype = "float32")
+    
+        # the top-left point will have the smallest sum, whereas
+        # the bottom-right point will have the largest sum
+        s = pts.sum(axis = 1)
+        rect[0] = pts[np.argmin(s)]
+        rect[2] = pts[np.argmax(s)]
+    
+        # now, compute the difference between the points, the
+        # top-right point will have the smallest difference,
+        # whereas the bottom-left will have the largest difference
+        diff = np.diff(pts, axis = 1)
+        rect[1] = pts[np.argmin(diff)]
+        rect[3] = pts[np.argmax(diff)]
+    
+        # return the ordered coordinates
+        return rect
+
+    def get_transform(self, detected_pts):
+        
+        src = self.order_points(detected_pts)
+
+        dst = np.array([(0, 0),
+                        (self.output_width, 0),
+                        (self.output_width, self.output_width),
+                        (0, self.output_width),], np.float32)
+
+        # compute the perspective transform matrix
+        return cv2.getPerspectiveTransform(src, dst)
 
     def image_callback(self, image_message):
         
@@ -37,20 +70,23 @@ class FrameAligner(object):
         if self.cam_model is None:
             return
 
- 
-        
         cv_image = self.bridge.imgmsg_to_cv2(image_message, desired_encoding="passthrough")
-        width, height = cv_image.shape[:2]
+
+        projected_pts = [None] * 4
 
         for marker in self.markers:
             projected = self.cam_model.project3dToPixel((marker.pose.pose.position.x,marker.pose.pose.position.y,marker.pose.pose.position.z))
-            center = int(projected[0]), int(projected[1])
+            projected_pts[marker.id] = int(projected[0]), int(projected[1])
             rospy.loginfo('id: %d x: %d y: %d', marker.id, projected[0], projected[1])
-            rospy.loginfo('id: %d x: %f y: %f', marker.id, marker.pose.pose.position.x, marker.pose.pose.position.y)
-            cv2.circle(cv_image, center, 50, self.colors[0], -1)
-            cv2.putText(cv_image, str(marker.id), center, 1, 18, self.colors[1],5)
+            # rospy.loginfo('id: %d x: %f y: %f', marker.id, marker.pose.pose.position.x, marker.pose.pose.position.y)
+            # cv2.circle(cv_image, center, 50, self.colors[0], -1)
+            # cv2.putText(cv_image, str(marker.id), center, 1, 18, self.colors[1],5)
+        
+        transform = self.get_transform(np.array(projected_pts))
 
-        out_img = self.bridge.cv2_to_imgmsg(cv_image, encoding="bgr8")
+        warped = cv2.warpPerspective(cv_image, transform, (self.output_width, self.output_width))
+
+        out_img = self.bridge.cv2_to_imgmsg(warped, encoding="bgr8")
         self.pub.publish(out_img)
 
 
@@ -75,10 +111,12 @@ def listener():
     # run simultaneously.
     rospy.init_node('align_frame', anonymous=True)
 
-    framer = FrameAligner()
-
     input_image = rospy.get_param("~input_image")
     camera_info = rospy.get_param("~camera_info")
+    output_width = rospy.get_param("~output_width", 800)
+
+    framer = FrameAligner(output_width)
+
     pose_markers = '/ar_pose_marker'
     rospy.Subscriber(input_image, Image, framer.image_callback)
     rospy.Subscriber(camera_info, CameraInfo, framer.camera_info_callback)
